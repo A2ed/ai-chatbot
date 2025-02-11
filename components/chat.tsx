@@ -30,6 +30,8 @@ export function Chat({
   isReadonly: boolean;
 }) {
   const { mutate } = useSWRConfig();
+  const [patientId, setPatientId] = useState('');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
   const {
     messages,
@@ -43,7 +45,12 @@ export function Chat({
     reload,
   } = useChat({
     id,
-    body: { id, selectedChatModel: selectedChatModel },
+    body: {
+      id,
+      selectedChatModel,
+      patientId,
+      selectedDate
+    },
     initialMessages,
     experimental_throttle: 100,
     sendExtraMessageFields: true,
@@ -65,44 +72,74 @@ export function Chat({
   const isBlockVisible = useBlockSelector((state) => state.isVisible);
 
   return (
-    <>
-      <div className="flex flex-col min-w-0 h-dvh bg-background">
-        <ChatHeader
-          chatId={id}
-          selectedModelId={selectedChatModel}
-          selectedVisibilityType={selectedVisibilityType}
-          isReadonly={isReadonly}
-        />
+    <div className="flex flex-col h-full">
+      <ChatHeader
+        chatId={id}
+        selectedModelId={selectedChatModel}
+        selectedVisibilityType={selectedVisibilityType}
+        isReadonly={isReadonly}
+      />
 
-        <Messages
-          chatId={id}
-          isLoading={isLoading}
-          votes={votes}
-          messages={messages}
-          setMessages={setMessages}
-          reload={reload}
-          isReadonly={isReadonly}
-          isBlockVisible={isBlockVisible}
-        />
-
-        <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
-          {!isReadonly && (
-            <MultimodalInput
-              chatId={id}
-              input={input}
-              setInput={setInput}
-              handleSubmit={handleSubmit}
-              isLoading={isLoading}
-              stop={stop}
-              attachments={attachments}
-              setAttachments={setAttachments}
-              messages={messages}
-              setMessages={setMessages}
-              append={append}
-            />
-          )}
-        </form>
+      {/* Patient Data Controls */}
+      <div className="flex flex-row gap-4 p-4 bg-muted/50">
+        <div className="flex-1">
+          <label htmlFor="patientId" className="block text-sm font-medium mb-1">
+            Patient ID
+          </label>
+          <input
+            id="patientId"
+            type="text"
+            value={patientId}
+            onChange={(e) => setPatientId(e.target.value)}
+            placeholder="Enter patient ID..."
+            className="w-full px-3 py-2 rounded-md border bg-background"
+          />
+        </div>
+        <div className="flex-1">
+          <label htmlFor="selectedDate" className="block text-sm font-medium mb-1">
+            End Date
+          </label>
+          <input
+            id="selectedDate"
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-full px-3 py-2 rounded-md border bg-background"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Data will be pulled from this date back one month
+          </p>
+        </div>
       </div>
+
+      <Messages
+        chatId={id}
+        isLoading={isLoading}
+        votes={votes}
+        messages={messages}
+        setMessages={setMessages}
+        reload={reload}
+        isReadonly={isReadonly}
+        isBlockVisible={isBlockVisible}
+      />
+
+      <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
+        {!isReadonly && (
+          <MultimodalInput
+            chatId={id}
+            input={input}
+            setInput={setInput}
+            handleSubmit={handleSubmit}
+            isLoading={isLoading}
+            stop={stop}
+            attachments={attachments}
+            setAttachments={setAttachments}
+            messages={messages}
+            setMessages={setMessages}
+            append={append}
+          />
+        )}
+      </form>
 
       <Block
         chatId={id}
@@ -120,6 +157,6 @@ export function Chat({
         votes={votes}
         isReadonly={isReadonly}
       />
-    </>
+    </div>
   );
 }
