@@ -1,0 +1,4 @@
+api:
+  algorithm: ingest-strive-applewatch-md.0
+  device_id: all
+  stream_type_id: percentage
