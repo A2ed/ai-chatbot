@@ -1,7 +1,41 @@
 'use client';
 
 import { useChat } from 'ai/react';
+import { TimeSeriesPlot } from '../components/TimeSeriesPlot';
+import { Message } from 'ai';
 import { useState } from 'react';
+import { ComponentType } from 'react';
+import React from 'react';
+
+interface TimeSeriesData {
+    time: string;
+    percentage: number;
+}
+
+interface TimeSeriesProps {
+    data: TimeSeriesData[];
+    title?: string;
+    height?: number;
+    width?: number;
+}
+
+interface UIComponent {
+    __type: 'ui-component';
+    component: ComponentType<TimeSeriesProps>;
+    props: TimeSeriesProps;
+}
+
+// Type guard function to check if an object is a UIComponent
+function isUIComponent(obj: any): obj is UIComponent {
+    return (
+        obj &&
+        typeof obj === 'object' &&
+        '__type' in obj &&
+        obj.__type === 'ui-component' &&
+        'component' in obj &&
+        'props' in obj
+    );
+}
 
 export default function Chat() {
     const [patientId, setPatientId] = useState('');
@@ -48,23 +82,17 @@ export default function Chat() {
             {/* Chat Messages */}
             <div className="flex flex-col space-y-4">
                 {messages.map(m => (
-                    <div
-                        key={m.id}
-                        className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                        <div
-                            className={`rounded-lg px-4 py-2 max-w-sm ${m.role === 'user'
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-gray-200 text-black'
-                                }`}
-                        >
-                            {m.content}
-                            {m.toolInvocations && (
-                                <pre className="mt-2 text-xs bg-gray-100 p-2 rounded">
-                                    {JSON.stringify(m.toolInvocations, null, 2)}
-                                </pre>
+                    <div key={m.id} className="whitespace-pre-wrap">
+                        <strong>{m.role === 'user' ? 'User: ' : 'Assistant: '}</strong>
+                        {m.content}
+                        {m.role === 'assistant' &&
+                            m.data &&
+                            typeof m.data === 'object' &&
+                            isUIComponent(m.data) && (
+                                <div className="mt-4">
+                                    {React.createElement(m.data.component as any, m.data.props)}
+                                </div>
                             )}
-                        </div>
                     </div>
                 ))}
             </div>
@@ -72,10 +100,10 @@ export default function Chat() {
             {/* Chat Input */}
             <form onSubmit={handleSubmit} className="mt-4">
                 <input
-                    value={input}
-                    onChange={handleInputChange}
-                    placeholder="Ask about patient data..."
                     className="w-full rounded-lg border border-gray-300 p-2"
+                    value={input}
+                    placeholder="Ask about patient data..."
+                    onChange={handleInputChange}
                 />
             </form>
         </div>

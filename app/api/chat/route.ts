@@ -1,48 +1,113 @@
 import { openai } from '@ai-sdk/openai';
 import { createDataStreamResponse, streamText } from 'ai';
 import { getPatientData } from '@/lib/ai/tools/rune-labs/get-patient-data';
+import { plotPatientData } from '@/lib/ai/tools/plot-patient-data';
 
 export async function POST(req: Request) {
     const { messages, patientId, selectedDate } = await req.json();
 
+    // Validate required parameters
+    if (!patientId || patientId === 'not set') {
+        return new Response(
+            JSON.stringify({
+                error: 'Please enter a valid patient ID before requesting data visualization.'
+            }),
+            { status: 400 }
+        );
+    }
+
     return createDataStreamResponse({
         execute: async dataStream => {
-            const result = streamText({
-                model: openai('gpt-4'),
-                messages,
-                tools: {
-                    getPatientData
-                },
-                system: `You are a helpful assistant with access to patient measurement data through the Rune Labs API.
-                When asked about patient data, use the getPatientData tool to fetch the information.
-                
-                The current patient ID is: ${patientId || 'not set'}
-                The selected date is: ${selectedDate || 'not set'}
-                
-                The tool requires:
-                - patient_id: Use the provided patient ID from the context
-                - selected_date: Use the provided selected date from the context
-                - measurement_type: Must be either 'tremor' or 'dyskinesia'. Always specify this based on what the user asks for.
-                  If they ask about tremors, use 'tremor'. If they ask about dyskinesia, use 'dyskinesia'.
-                  If they don't specify, default to 'tremor'.
-                - severity: One of ['all', 'slight', 'mild', 'moderate', 'strong', 'none', 'unknown']. 
-                  IMPORTANT: Always use 'all' as the default severity unless the user specifically asks about a severity level.
-                  For example:
-                  - "what is the patient's data" -> use severity='all'
-                  - "show me slight tremors" -> use severity='slight'
-                - repull_all: Optional boolean to force refresh the data
-                
-                Always use the provided patient ID and selected date when making tool calls.
-                If either is not set, inform the user they need to provide these values.
-                
-                When the user asks about a specific severity level, make sure to include that severity parameter in your tool call.
-                Otherwise, ALWAYS default to severity='all' to show all data.
-                
-                The data returned will include measurements of the specified type (tremor or dyskinesia)
-                and severity level. Present this data in a clear, readable format for the user.`,
-            });
+            try {
+                const result = streamText({
+                    model: openai('gpt-4'),
+                    messages: [
+                        ...messages,
+                        {
+                            role: 'system',
+                            content: `You are a medical data visualization assistant. Your task is to fetch and visualize patient data.
 
-            result.mergeIntoDataStream(dataStream);
-        },
+When asked to show or plot data:
+1. Say "Let me fetch and visualize that data for you."
+2. Use getPatientData to fetch the data
+3. After receiving the data, use plotPatientData to create the visualization
+4. Finally, describe what the plot shows.
+
+Current patient: ${patientId}
+Selected date: ${selectedDate}`
+                        }
+                    ],
+                    maxSteps: 4,
+                    toolChoice: 'required',
+                    tools: {
+                        getPatientData: {
+                            ...getPatientData,
+                            description: 'Fetches patient measurement data. Returns { data: Array<{ time: string, percentage: number }> }.'
+                        },
+                        plotPatientData: {
+                            ...plotPatientData,
+                            description: 'Creates a plot from the data array. Takes { data: Array<{ time: string, percentage: number }> }.'
+                        }
+                    },
+                    temperature: 0,
+                    onStepFinish({ text, toolCalls, toolResults, finishReason, usage }) {
+                        console.log('\n=== Step Completed ===');
+                        console.log('Step Text:', text ? text.trim() : 'No text');
+
+                        if (toolCalls?.length) {
+                            toolCalls.forEach((call, idx) => {
+                                console.log(`Tool Call ${idx + 1}:`, {
+                                    name: call.toolName,
+                                    toolCallId: call.toolCallId,
+                                    args: call.toolName === 'getPatientData' ? {
+                                        patient_id: call.args.patient_id,
+                                        selected_date: call.args.selected_date,
+                                        measurement_type: call.args.measurement_type
+                                    } : {
+                                        dataLength: call.args.data?.length || 0
+                                    }
+                                });
+                            });
+                        }
+
+                        if (toolResults?.length) {
+                            toolResults.forEach((result, idx) => {
+                                if (result.type === 'tool-result' && result.result) {
+                                    console.log(`Tool Result ${idx + 1}:`, {
+                                        name: result.toolName,
+                                        type: result.type,
+                                        success: true,
+                                        dataInfo: result.toolName === 'getPatientData'
+                                            ? `${result.result.data?.length || 0} records`
+                                            : 'Plot component'
+                                    });
+                                }
+                            });
+                        }
+
+                        console.log('Finish Reason:', finishReason);
+                        console.log('Token Usage:', usage);
+                        console.log('=====================\n');
+                    }
+                });
+
+                result.mergeIntoDataStream(dataStream);
+            } catch (error) {
+                console.error('Error in chat route:', error);
+                if (error instanceof Error) {
+                    console.error('Error details:', {
+                        name: error.name,
+                        message: error.message,
+                        stack: error.stack
+                    });
+                }
+
+                const errorMessage = error instanceof Error && error.message.includes('ToolInvocation')
+                    ? "Failed to complete the visualization sequence. Please try again."
+                    : "Failed to process your request. Please try again.";
+
+                dataStream.write(`2:{"type":"error","error":"${errorMessage}"}\n`);
+            }
+        }
     });
 } 
