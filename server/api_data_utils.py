@@ -45,26 +45,10 @@ def fetch_stream_batch(
     Args:
         stream_ids: List of stream IDs to fetch
         start_time: Start time for the data window
-        measurement_type: Type of measurement to return ('tremor' or 'dyskinesia')
-        severity: One of ['all', 'slight', 'mild', 'moderate', 'strong', 'none', 'unknown']. Defaults to 'all'
+        measurement_type: Type of measurement (not used for filtering as handled in metadata)
+        severity: Severity level (not used for filtering as handled in metadata)
     """
     try:
-        # Validate severity parameter
-        valid_severities = [
-            "all",
-            "slight",
-            "mild",
-            "moderate",
-            "strong",
-            "none",
-            "unknown",
-        ]
-        if severity not in valid_severities:
-            raise ValueError(f"Severity must be one of {valid_severities}")
-
-        # Log the requested severity
-        logger.info(f"fetch_stream_batch called with severity: {severity}")
-
         df = get_stream_dataframe(
             stream_ids=stream_ids,
             start_time=start_time,
@@ -72,19 +56,6 @@ def fetch_stream_batch(
 
         if df is not None and not df.empty:
             logger.info(f"Initial data shape: {df.shape}")
-            logger.info(f"Initial unique severities: {df['severity'].unique()}")
-
-            # Filter by severity if specified and not 'all'
-            if severity != "all":
-                logger.info(f"Filtering for severity: {severity}")
-                df = df[df["severity"] == severity]
-                if df.empty:
-                    logger.info(f"No data found for severity level: {severity}")
-                    return None
-
-            logger.info(
-                f"After severity filter unique severities: {df['severity'].unique()}"
-            )
 
             # Convert time to datetime if it isn't already
             df["time"] = pd.to_datetime(df["time"])
@@ -125,20 +96,14 @@ def get_api_data(
     Parameters:
       - patient_id (str): The patient identifier.
       - selected_date (datetime.date or datetime.datetime): The end date for the data window.
-      - measurement_type (str): Type of measurement to return ('tremor' or 'dyskinesia')
+      - measurement_type (str): Type of measurement (used in metadata filtering)
       - repull_all (bool): If True, the cache is ignored and data is re-fetched.
-      - severity (str): One of ['all', 'slight', 'mild', 'moderate', 'strong', 'none', 'unknown']. Defaults to 'all'
+      - severity (str): Severity level (used in metadata filtering)
 
     Returns:
       - pd.DataFrame: DataFrame containing the requested measurement data with columns:
-        [time, measurement, severity, percentage, measurement_duration_ns, device_id]
+        [time, percentage]
     """
-    logger.info(f"get_api_data called with severity: {severity}")
-
-    # Validate measurement type
-    if measurement_type not in ["tremor", "dyskinesia"]:
-        raise ValueError("measurement_type must be either 'tremor' or 'dyskinesia'")
-
     # Load API configuration.
     config_path = Path("data_config.yaml")
     if not config_path.exists():
@@ -161,13 +126,13 @@ def get_api_data(
     device_id = api_config.get("device_id", "all")
     stream_type_id = api_config.get("stream_type_id", "percentage")
 
-    # Get stream metadata using the API, filtering for the specific measurement type
+    # Get stream metadata using the API, filtering is handled at metadata level
     metadata = get_patient_stream_metadata(
         patient_id=patient_id,
         algorithm=algorithm,
         device_id=device_id,
         stream_type_id=stream_type_id,
-        measurement=measurement_type,  # Filter at metadata level
+        measurement=measurement_type,
         severity=severity,
     )
     stream_ids = list(metadata.ids())
@@ -175,7 +140,7 @@ def get_api_data(
         logger.info(
             f"No streams found for patient {patient_id} with measurement type {measurement_type}."
         )
-        return pd.DataFrame(columns=KEEP_COLUMNS)
+        return pd.DataFrame(columns=["time", "percentage"])
 
     # Define the time window: one month ending at selected_date.
     upper_bound = pd.Timestamp(selected_date).tz_localize("UTC")
@@ -207,13 +172,16 @@ def get_api_data(
                 logger.error(f"Error fetching batch for patient {patient_id}: {e}")
 
     if not dfs:
-        return pd.DataFrame(columns=KEEP_COLUMNS)
+        return pd.DataFrame(columns=["time", "percentage"])
 
     # Combine all dataframes
     final_df = safe_concat_dataframes(dfs)
 
     # Ensure correct column order
     final_df = final_df[["time", "percentage"]]
+
+    # Drop rows where percentage is NaN
+    final_df = final_df[final_df["percentage"].notna()]
 
     # Save DataFrame as feather file
     if not final_df.empty:
