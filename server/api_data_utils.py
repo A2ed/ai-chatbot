@@ -26,6 +26,7 @@ KEEP_COLUMNS = [
     "device_id",
 ]
 BATCH_SIZE = 10
+TMP_DIR = Path("data/api")  # Define the temporary directory path
 
 
 def safe_concat_dataframes(dfs):
@@ -89,7 +90,7 @@ def fetch_stream_batch(
             df["time"] = pd.to_datetime(df["time"])
 
             # Keep all required columns
-            df = df[KEEP_COLUMNS]
+            df = df[["time", "percentage"]]
 
             # Resample to hourly averages
             df = (
@@ -97,11 +98,7 @@ def fetch_stream_batch(
                 .resample("1h")
                 .agg(
                     {
-                        "measurement": "first",
-                        "severity": "first",
                         "percentage": "mean",
-                        "measurement_duration_ns": "mean",
-                        "device_id": "first",
                     }
                 )
                 .reset_index()
@@ -215,19 +212,17 @@ def get_api_data(
     # Combine all dataframes
     final_df = safe_concat_dataframes(dfs)
 
-    # Filter by severity if specified and not 'all'
-    if severity != "all" and not final_df.empty:
-        final_df = final_df[final_df["severity"] == severity]
-
-    # Ensure all required columns are present
-    for col in KEEP_COLUMNS:
-        if col not in final_df.columns:
-            if col in ["percentage", "measurement_duration_ns"]:
-                final_df[col] = 0
-            else:
-                final_df[col] = ""
-
     # Ensure correct column order
-    final_df = final_df[KEEP_COLUMNS]
+    final_df = final_df[["time", "percentage"]]
+
+    # Save DataFrame as feather file
+    if not final_df.empty:
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+        tmp_path = (
+            TMP_DIR
+            / f"tmp_data_{measurement_type}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.feather"
+        )
+        final_df.to_feather(tmp_path)
+        logger.info(f"Saved temporary data to: {tmp_path}")
 
     return final_df
