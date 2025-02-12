@@ -17,6 +17,7 @@ export interface PatientDataParams {
     selected_date: string;
     measurement_type: 'tremor' | 'dyskinesia';
     repull_all?: boolean;
+    severity?: 'all' | 'slight' | 'mild' | 'moderate' | 'strong' | 'none' | 'unknown';
 }
 
 export const getPatientData = tool({
@@ -25,7 +26,11 @@ export const getPatientData = tool({
         patient_id: z.string().describe('The patient identifier'),
         selected_date: z.string().describe('The end date for the data window (ISO format)'),
         measurement_type: z.enum(['tremor', 'dyskinesia']).describe('Type of measurement to return'),
-        repull_all: z.boolean().optional().describe('If true, ignore cache and fetch fresh data')
+        repull_all: z.boolean().optional().describe('If true, ignore cache and fetch fresh data'),
+        severity: z.enum(['all', 'slight', 'mild', 'moderate', 'strong', 'none', 'unknown'])
+            .optional()
+            .default('all')
+            .describe('Filter data by severity level')
     }),
     execute: async (params: PatientDataParams) => {
         try {

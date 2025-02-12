@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from datetime import datetime
 import logging
 from typing import Optional, List, Dict, Any
@@ -34,6 +34,28 @@ class PatientDataRequest(BaseModel):
     selected_date: str
     measurement_type: str
     repull_all: Optional[bool] = False
+    severity: Optional[str] = "all"
+
+    @validator("severity")
+    def validate_severity(cls, v):
+        valid_severities = [
+            "all",
+            "slight",
+            "mild",
+            "moderate",
+            "strong",
+            "none",
+            "unknown",
+        ]
+        if v not in valid_severities:
+            raise ValueError(f"Severity must be one of {valid_severities}")
+        return v
+
+    @validator("measurement_type")
+    def validate_measurement_type(cls, v):
+        if v not in ["tremor", "dyskinesia"]:
+            raise ValueError("measurement_type must be either 'tremor' or 'dyskinesia'")
+        return v
 
 
 class ErrorResponse(BaseModel):
@@ -76,6 +98,7 @@ async def get_patient_data_endpoint(request: PatientDataRequest):
             selected_date=selected_date,
             measurement_type=request.measurement_type,
             repull_all=request.repull_all,
+            severity=request.severity,
         )
 
         # Convert DataFrame to dict
